@@ -181,8 +181,8 @@ def register_voice_handler(client: TelegramClient):
         try:
             logger.info(f"Processing voice message {message.id} in chat {message.chat_id}")
 
-            # Send status message immediately (with quote to show original voice)
-            status_msg = await message.reply("🎤 Транскрибирую...", quote=True)
+            # Send status message immediately (reply shows original voice)
+            status_msg = await message.reply("🎤 Транскрибирую...")
 
             # Process voice
             result = await process_voice_message(client, message, improve=True)
