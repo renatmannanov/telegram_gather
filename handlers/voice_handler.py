@@ -6,7 +6,7 @@ import os
 import logging
 import tempfile
 from telethon import TelegramClient, events
-from telethon.tl.types import User
+from telethon.tl.types import User, Chat, Channel, ChannelParticipantAdmin, ChannelParticipantCreator
 
 from config import config
 from services import transcribe_audio, improve_transcription, is_transcription_available, TranscriptionError
@@ -19,9 +19,45 @@ def has_voice_or_audio(message) -> bool:
     return message.voice is not None or message.audio is not None
 
 
-def is_private_chat(message) -> bool:
-    """Check if message is from a private (1-on-1) chat"""
-    return isinstance(message.chat, User)
+async def is_allowed_chat(client: TelegramClient, message) -> bool:
+    """
+    Проверяет, разрешён ли чат для транскрипции:
+    - Личные чаты (User) — всегда да
+    - Группы из whitelist — да
+    - Группы где я создатель или админ — да
+    - Остальное — нет
+    """
+    chat = message.chat
+
+    # 1. Личка — всегда ок
+    if isinstance(chat, User):
+        return True
+
+    chat_id = message.chat_id
+
+    # 2. Проверка whitelist (ID могут быть с минусом или без)
+    allowed_ids = config.get("allowed_group_ids", set())
+    if chat_id in allowed_ids or abs(chat_id) in allowed_ids:
+        return True
+
+    # 3. Для групп и супергрупп проверяем права создателя/админа
+    if isinstance(chat, (Chat, Channel)):
+        # Быстрая проверка: creator флаг в chat
+        if getattr(chat, 'creator', False):
+            return True
+
+        # Детальная проверка через API
+        try:
+            me = await client.get_me()
+            if isinstance(chat, Channel):
+                # Супергруппы и каналы
+                participant = await client.get_participant(chat, me)
+                if isinstance(participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
+                    return True
+        except Exception as e:
+            logger.debug(f"Could not check admin rights for {chat_id}: {e}")
+
+    return False
 
 
 async def download_voice_file(client: TelegramClient, message) -> str:
@@ -131,9 +167,9 @@ def register_voice_handler(client: TelegramClient):
         """Handle new voice/audio messages"""
         message = event.message
 
-        # Only private chats for now
-        if not is_private_chat(message):
-            logger.debug(f"Skipping voice in non-private chat: {message.chat_id}")
+        # Check if chat is allowed (private, whitelist, or admin/creator)
+        if not await is_allowed_chat(client, message):
+            logger.debug(f"Skipping voice in non-allowed chat: {message.chat_id}")
             return
 
         # Check if transcription is available

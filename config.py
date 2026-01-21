@@ -43,6 +43,13 @@ config = {
     # Get your chat_id by messaging @userinfobot
     "health_bot_token": get_optional("HEALTH_BOT_TOKEN"),
     "health_alert_chat_id": get_optional("HEALTH_ALERT_CHAT_ID"),
+
+    # Whitelist групп для транскрипции (через запятую)
+    # Пример: ALLOWED_GROUP_IDS=-1001234567890,-1009876543210
+    "allowed_group_ids": set(
+        int(x.strip()) for x in get_optional("ALLOWED_GROUP_IDS", "").split(",")
+        if x.strip()
+    ),
 }
 
 
