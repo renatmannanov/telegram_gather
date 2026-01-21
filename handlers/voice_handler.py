@@ -28,35 +28,44 @@ async def is_allowed_chat(client: TelegramClient, message) -> bool:
     - Остальное — нет
     """
     chat = message.chat
+    chat_id = message.chat_id
+
+    logger.debug(f"Checking chat {chat_id}, type: {type(chat).__name__}")
 
     # 1. Личка — всегда ок
     if isinstance(chat, User):
         return True
 
-    chat_id = message.chat_id
-
     # 2. Проверка whitelist (ID могут быть с минусом или без)
     allowed_ids = config.get("allowed_group_ids", set())
     if chat_id in allowed_ids or abs(chat_id) in allowed_ids:
+        logger.debug(f"Chat {chat_id} is in whitelist")
         return True
 
     # 3. Для групп и супергрупп проверяем права создателя/админа
-    if isinstance(chat, (Chat, Channel)):
-        # Быстрая проверка: creator флаг в chat
-        if getattr(chat, 'creator', False):
+    try:
+        # Получаем полную информацию о чате
+        full_chat = await client.get_entity(chat_id)
+        logger.debug(f"Full chat type: {type(full_chat).__name__}")
+
+        # Быстрая проверка: creator флаг
+        if getattr(full_chat, 'creator', False):
+            logger.debug(f"User is creator of chat {chat_id}")
             return True
 
-        # Детальная проверка через API
-        try:
+        # Проверка админа для супергрупп (Channel с megagroup=True)
+        if isinstance(full_chat, Channel):
             me = await client.get_me()
-            if isinstance(chat, Channel):
-                # Супергруппы и каналы
-                participant = await client.get_participant(chat, me)
-                if isinstance(participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
-                    return True
-        except Exception as e:
-            logger.debug(f"Could not check admin rights for {chat_id}: {e}")
+            participant = await client.get_participant(full_chat, me)
+            logger.debug(f"Participant type: {type(participant).__name__}")
+            if isinstance(participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
+                logger.debug(f"User is admin of chat {chat_id}")
+                return True
 
+    except Exception as e:
+        logger.warning(f"Could not check admin rights for {chat_id}: {e}")
+
+    logger.debug(f"Chat {chat_id} is not allowed")
     return False
 
 
