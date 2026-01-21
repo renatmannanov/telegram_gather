@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Session files (will be restored from env var)
+*.session
+*.session-journal
+
+# Misc
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
