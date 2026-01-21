@@ -5,6 +5,7 @@ Userbot that transcribes voice messages in private chats
 import logging
 import asyncio
 import base64
+import zlib
 import os
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
@@ -68,15 +69,23 @@ async def auth_with_code(client: TelegramClient):
 
 
 def restore_session_from_env():
-    """Restore session file from base64-encoded environment variable"""
+    """Restore session file from base64-encoded (and optionally compressed) environment variable"""
     session_data = os.getenv("TELEGRAM_SESSION_BASE64")
     if session_data:
         session_file = f"{config['session_name']}.session"
         if not os.path.exists(session_file):
             logger.info("Restoring session from environment variable...")
             try:
+                decoded = base64.b64decode(session_data)
+                # Try to decompress (if compressed with zlib)
+                try:
+                    decoded = zlib.decompress(decoded)
+                    logger.info("Session was compressed, decompressed successfully")
+                except zlib.error:
+                    # Not compressed, use as-is
+                    pass
                 with open(session_file, "wb") as f:
-                    f.write(base64.b64decode(session_data))
+                    f.write(decoded)
                 logger.info("Session restored successfully")
             except Exception as e:
                 logger.error(f"Failed to restore session: {e}")

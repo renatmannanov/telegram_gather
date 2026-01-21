@@ -4,6 +4,7 @@ Helps re-authorize and update session for Railway deployment
 """
 import asyncio
 import base64
+import zlib
 import os
 import sys
 
@@ -104,13 +105,30 @@ async def main():
 
     await client.disconnect()
 
-    # Generate base64
+    # Generate compressed base64
     print("\n" + "=" * 60)
     print("  SESSION BASE64 FOR RAILWAY")
     print("=" * 60)
 
     with open(session_file, "rb") as f:
-        session_base64 = base64.b64encode(f.read()).decode()
+        session_bytes = f.read()
+
+    # Compress to fit Railway's 32KB limit
+    compressed = zlib.compress(session_bytes, level=9)
+    session_base64 = base64.b64encode(compressed).decode()
+
+    original_size = len(base64.b64encode(session_bytes).decode())
+    compressed_size = len(session_base64)
+
+    print(f"\nOriginal size: {original_size} chars")
+    print(f"Compressed size: {compressed_size} chars")
+    print(f"Compression ratio: {100 - (compressed_size * 100 // original_size)}%")
+
+    if compressed_size > 32768:
+        print("\n⚠️ WARNING: Still exceeds Railway's 32KB limit!")
+        print("You may need to use Railway Volume storage instead.")
+    else:
+        print("\n✅ Fits within Railway's 32KB variable limit!")
 
     print("\nCopy this value and set it as TELEGRAM_SESSION_BASE64 on Railway:\n")
     print("-" * 60)
