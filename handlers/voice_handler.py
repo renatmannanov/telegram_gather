@@ -176,9 +176,12 @@ def register_voice_handler(client: TelegramClient):
         """Handle new voice/audio messages"""
         message = event.message
 
+        # Log every voice message received (for debugging)
+        logger.info(f"Voice detected in chat {message.chat_id}, checking permissions...")
+
         # Check if chat is allowed (private, whitelist, or admin/creator)
         if not await is_allowed_chat(client, message):
-            logger.debug(f"Skipping voice in non-allowed chat: {message.chat_id}")
+            logger.info(f"Skipping voice in non-allowed chat: {message.chat_id}")
             return
 
         # Check if transcription is available
