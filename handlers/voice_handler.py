@@ -198,16 +198,16 @@ def register_voice_handler(client: TelegramClient):
             is_outgoing = message.out or (message.sender_id == me.id)
 
             if is_outgoing:
-                # My message - just show transcription
-                formatted = f"📄 {transcription}"
+                # My message - just show transcription as blockquote
+                formatted = f"<blockquote>{transcription}</blockquote>"
             else:
-                # Someone else's message - show "сообщение от Name"
+                # Someone else's message - show "сообщение от Name" with blockquote
                 sender = await message.get_sender()
                 sender_name = sender.first_name or sender.username or "собеседника"
-                formatted = f"📄 Сообщение от {sender_name}:\n{transcription}"
+                formatted = f"📄 Сообщение от {sender_name}:\n<blockquote>{transcription}</blockquote>"
 
-            # Update status message with transcription
-            await status_msg.edit(formatted)
+            # Update status message with transcription (HTML for blockquote)
+            await status_msg.edit(formatted, parse_mode='html')
 
             logger.info(f"Transcription sent for message {message.id}")
 
