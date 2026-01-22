@@ -14,9 +14,9 @@ from services import transcribe_audio, improve_transcription, is_transcription_a
 logger = logging.getLogger(__name__)
 
 
-def has_voice_or_audio(message) -> bool:
-    """Check if message contains voice or audio"""
-    return message.voice is not None or message.audio is not None
+def has_voice_message(message) -> bool:
+    """Check if message contains a voice message (not audio files)"""
+    return message.voice is not None
 
 
 async def is_allowed_chat(client: TelegramClient, message) -> bool:
@@ -171,7 +171,7 @@ def register_voice_handler(client: TelegramClient):
     - Only in private chats (for now)
     """
 
-    @client.on(events.NewMessage(func=lambda e: has_voice_or_audio(e.message)))
+    @client.on(events.NewMessage(func=lambda e: has_voice_message(e.message)))
     async def voice_handler(event):
         """Handle new voice/audio messages"""
         message = event.message
