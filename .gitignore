@@ -25,3 +25,8 @@ Thumbs.db
 # Temp files
 *.tmp
 *.temp
+
+# Personal data & config
+data/
+assistant_config.yaml
+backlog.md

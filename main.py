@@ -1,6 +1,6 @@
 """
 Telegram Gather - Personal Telegram Assistant
-Userbot that transcribes voice messages in private chats
+Userbot that transcribes voice messages and provides AI-powered chat summaries
 """
 import logging
 import asyncio
@@ -13,6 +13,7 @@ from telethon.errors import SessionPasswordNeededError
 from config import config
 from handlers import register_voice_handler
 from services.health_monitor import HealthMonitor, is_session_error
+from assistant import start_assistant
 
 # Configure logging
 logging.basicConfig(
@@ -152,6 +153,13 @@ async def main():
 
         # Register handlers
         register_voice_handler(client)
+
+        # Start personal assistant (if configured)
+        assistant_bot = await start_assistant(
+            client,
+            bot_token=config.get("health_bot_token"),
+            chat_id=config.get("health_alert_chat_id")
+        )
 
         logger.info("Telegram Gather is running. Press Ctrl+C to stop.")
 

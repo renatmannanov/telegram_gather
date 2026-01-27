@@ -4,3 +4,4 @@ python-dotenv
 cryptg
 qrcode
 aiohttp>=3.9.0
+pyyaml>=6.0
