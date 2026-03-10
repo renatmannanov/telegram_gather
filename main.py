@@ -10,10 +10,13 @@ import os
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
-from config import config
+from config import config, parse_sources
 from handlers import register_voice_handler
 from services.health_monitor import HealthMonitor, is_session_error
 from assistant import start_assistant
+from fragments.db import FragmentsDB
+from fragments.collector import FragmentCollector
+from telethon import events
 
 # Configure logging
 logging.basicConfig(
@@ -161,6 +164,61 @@ async def main():
             chat_id=config.get("health_alert_chat_id")
         )
 
+        # Start fragment collection (if DATABASE_URL configured)
+        fragments_db = None
+        if config.get("database_url"):
+            try:
+                fragments_db = FragmentsDB()
+                await fragments_db.connect(config["database_url"])
+                collector = FragmentCollector(client, fragments_db)
+
+                # Realtime: event handler for saved messages
+                @client.on(events.NewMessage(chats='me'))
+                async def on_saved_message(event):
+                    msg = event.message
+                    if not msg.text or len(msg.text.strip()) < 10:
+                        return
+                    result = await collector.db.insert_fragment(
+                        external_id=f"telegram_me_{msg.id}",
+                        source='telegram',
+                        text_content=msg.text,
+                        created_at=msg.date,
+                        tags=collector._extract_tags(msg.text),
+                        content_type=collector._detect_type(msg),
+                        metadata={
+                            'telegram_msg_id': msg.id,
+                            'chat': 'me',
+                            'is_forward': msg.forward is not None
+                        }
+                    )
+                    if result:
+                        await collector.db.save_last_id('me', msg.id)
+                        logger.info(f"Fragment saved (realtime): me_{msg.id}")
+
+                # Polling: channels (excluding 'me' — handled by event above)
+                all_sources = parse_sources(config["gather_sources_raw"])
+                channel_sources = [s for s in all_sources if s != 'me']
+
+                if channel_sources:
+                    async def channel_polling_loop():
+                        while True:
+                            try:
+                                stats = await collector.collect_new(channel_sources)
+                                if stats['inserted']:
+                                    logger.info(f"Channel polling: {stats}")
+                            except Exception as e:
+                                logger.error(f"Channel polling error: {e}")
+                            await asyncio.sleep(3600)
+
+                    asyncio.create_task(channel_polling_loop())
+                    logger.info(f"Fragment polling started for {len(channel_sources)} channel(s)")
+
+                logger.info("Fragment collection enabled")
+            except Exception as e:
+                logger.error(f"Failed to start fragment collection: {e}")
+        else:
+            logger.info("Fragment collection disabled (DATABASE_URL not set)")
+
         logger.info("Telegram Gather is running. Press Ctrl+C to stop.")
 
         # Run until disconnected
@@ -179,6 +237,10 @@ async def main():
         raise
 
     finally:
+        # Cleanup fragment DB pool
+        if fragments_db:
+            await fragments_db.close()
+
         # Send shutdown notification
         await health_monitor.on_shutdown()
 

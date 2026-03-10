@@ -50,7 +50,31 @@ config = {
         int(x.strip()) for x in get_optional("ALLOWED_GROUP_IDS", "").split(",")
         if x.strip()
     ),
+
+    # Database (shared with ayda_think)
+    "database_url": get_optional("DATABASE_URL"),
+
+    # Fragment collection sources (comma-separated: me,-1001234567890,channel_username)
+    "gather_sources_raw": get_optional("GATHER_SOURCES", ""),
 }
+
+
+def parse_sources(env_value: str) -> list:
+    """Parse GATHER_SOURCES env value into list of source identifiers.
+
+    Numeric strings (including negative) are converted to int for Telethon.
+    'me' and usernames stay as strings.
+    """
+    sources = []
+    for s in env_value.split(','):
+        s = s.strip()
+        if not s:
+            continue
+        try:
+            sources.append(int(s))
+        except ValueError:
+            sources.append(s)
+    return sources
 
 
 def get(key: str, default=None):
