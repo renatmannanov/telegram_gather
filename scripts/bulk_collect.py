@@ -10,7 +10,6 @@ import argparse
 import asyncio
 import io
 import logging
-import os
 import sys
 
 if sys.platform == "win32":
@@ -24,49 +23,6 @@ from fragments.db import FragmentsDB
 from fragments.collector import FragmentCollector
 
 logger = logging.getLogger(__name__)
-
-
-async def bulk_collect(client, db, sources, batch_size=100):
-    """Collect entire message history from sources."""
-    collector = FragmentCollector(client, db)
-
-    for source in sources:
-        source_key = str(source)
-        count = 0
-        inserted = 0
-
-        last_id = await db.get_last_id(source_key)
-        logger.info(f"[{source_key}] Starting bulk collection (min_id={last_id})...")
-
-        async for msg in client.iter_messages(source, min_id=last_id, reverse=True):
-            if not msg.text:
-                continue
-            if len(msg.text.strip()) < 10 and not collector._has_url(msg.text):
-                continue
-
-            result = await db.insert_fragment(
-                external_id=f"telegram_{source_key}_{msg.id}",
-                source='telegram',
-                text_content=msg.text,
-                created_at=msg.date,
-                tags=collector._extract_tags(msg.text),
-                content_type=collector._detect_type(msg),
-                metadata={
-                    'telegram_msg_id': msg.id,
-                    'chat': source_key,
-                    'is_forward': msg.forward is not None
-                }
-            )
-            count += 1
-            if result:
-                inserted += 1
-            if count % batch_size == 0:
-                logger.info(f"  [{source_key}] Processed {count} messages, {inserted} inserted...")
-
-            # Update last_id as we go
-            await db.save_last_id(source_key, msg.id)
-
-        logger.info(f"[{source_key}] Done: {count} processed, {inserted} inserted")
 
 
 async def main():
@@ -108,9 +64,13 @@ async def main():
 
     db = FragmentsDB()
     await db.connect(database_url)
+    collector = FragmentCollector(client, db)
 
     try:
-        await bulk_collect(client, db, sources)
+        for source in sources:
+            source_key = str(source)
+            stats = await collector.bulk_collect(source, source_key=source_key)
+            logger.info(f"[{source_key}] Final: {stats}")
     finally:
         await db.close()
         await client.disconnect()

@@ -23,15 +23,18 @@ class AssistantBot:
         chat_id: str,
         collector: MessageCollector,
         summarizer: Summarizer,
-        storage: SummaryStorage
+        storage: SummaryStorage,
+        fragment_collector=None
     ):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.collector = collector
         self.summarizer = summarizer
         self.storage = storage
+        self.fragment_collector = fragment_collector
         self._last_update_id = 0
         self._running = False
+        self._bulk_task = None
 
     async def start(self):
         """Start polling for commands"""
@@ -94,6 +97,12 @@ class AssistantBot:
             await self._cmd_chat(text)
         elif text.startswith("/chats"):
             await self._cmd_list_chats()
+        elif text.startswith("/collect_status"):
+            await self._cmd_collect_status(text)
+        elif text.startswith("/collect_stop"):
+            await self._cmd_collect_stop()
+        elif text.startswith("/collect"):
+            await self._cmd_collect(text)
         elif text.startswith("/help"):
             await self._cmd_help()
         elif text.startswith("/reset"):
@@ -101,6 +110,9 @@ class AssistantBot:
 
     async def _cmd_summary(self):
         """Handle /summary command - summary of all unread messages"""
+        if not self.collector:
+            await self._send("❌ Summary не настроен (нет assistant_config.yaml)")
+            return
         # Send initial status message (will be edited)
         status_msg_id = await self._send("⏳ Собираю сообщения...", return_message_id=True)
 
@@ -129,6 +141,9 @@ class AssistantBot:
 
     async def _cmd_chat(self, text: str):
         """Handle /chat [name] [period] command"""
+        if not self.collector:
+            await self._send("❌ Summary не настроен (нет assistant_config.yaml)")
+            return
         parts = text.split()
 
         if len(parts) < 2:
@@ -180,6 +195,9 @@ class AssistantBot:
 
     async def _cmd_list_chats(self):
         """Handle /chats command - list monitored chats"""
+        if not self.collector:
+            await self._send("❌ Summary не настроен (нет assistant_config.yaml)")
+            return
         chats = self.collector.config.chats
         if not chats:
             await self._send("Нет настроенных чатов. Отредактируйте assistant_config.yaml")
@@ -202,7 +220,10 @@ class AssistantBot:
             "/summary - сводка непрочитанных сообщений\n"
             "/chat [имя] [период] - сводка конкретного чата\n"
             "/chats - список отслеживаемых чатов\n"
-            "/reset [имя] - сбросить состояние (перечитать сообщения)\n"
+            "/collect [источник] - bulk сбор фрагментов\n"
+            "/collect_status - статус сбора\n"
+            "/collect_stop - остановить сбор\n"
+            "/reset [имя] - сбросить состояние\n"
             "/help - эта справка\n\n"
             "<i>Примеры периодов: 12h, 1d, 2d, 1w</i>",
             parse_mode="HTML"
@@ -210,6 +231,9 @@ class AssistantBot:
 
     async def _cmd_reset(self, text: str):
         """Handle /reset command - reset state"""
+        if not self.collector:
+            await self._send("❌ Summary не настроен (нет assistant_config.yaml)")
+            return
         # Extract chat name (everything after "/reset ")
         chat_name = text[7:].strip() if len(text) > 7 else None
         chat_name = chat_name if chat_name else None  # Empty string -> None
@@ -220,6 +244,91 @@ class AssistantBot:
             await self._send(f"✅ Состояние сброшено для: {chat_name}")
         else:
             await self._send("✅ Состояние сброшено для всех чатов")
+
+    async def _cmd_collect(self, text: str):
+        """Handle /collect [source] command - bulk collect fragments"""
+        if not self.fragment_collector:
+            await self._send("❌ Fragment collection не настроен (нет DATABASE_URL)")
+            return
+
+        if self._bulk_task and not self._bulk_task.done():
+            await self._send("⚠️ Bulk collection уже запущен. /collect_stop чтобы остановить")
+            return
+
+        # Parse source argument
+        arg = text[len("/collect"):].strip()
+
+        try:
+            if arg:
+                entity, source_key = await self.fragment_collector.resolve_source(arg)
+            else:
+                await self._send(
+                    "Использование: /collect [источник]\n"
+                    "Примеры:\n"
+                    "  /collect iwacado\n"
+                    "  /collect -1002163129581\n"
+                    "  /collect me"
+                )
+                return
+        except ValueError as e:
+            await self._send(f"❌ {e}")
+            return
+
+        status_msg_id = await self._send(
+            f"⏳ Начинаю сбор из {arg} (source_key={source_key})...",
+            return_message_id=True
+        )
+
+        async def progress(count, inserted):
+            await self._edit(status_msg_id, f"⏳ {arg}: собрано {count}, вставлено {inserted}...")
+
+        async def run_bulk():
+            try:
+                stats = await self.fragment_collector.bulk_collect(
+                    entity, source_key=source_key, progress_callback=progress
+                )
+                await self._edit(
+                    status_msg_id,
+                    f"✅ {arg}: готово! Обработано {stats['count']}, вставлено {stats['inserted']}"
+                )
+            except Exception as e:
+                logger.error(f"Bulk collect error: {e}", exc_info=True)
+                await self._edit(status_msg_id, f"❌ Ошибка: {e}")
+
+        self._bulk_task = asyncio.create_task(run_bulk())
+
+    async def _cmd_collect_status(self, text: str):
+        """Handle /collect_status command - show gather_state"""
+        if not self.fragment_collector:
+            await self._send("❌ Fragment collection не настроен")
+            return
+
+        rows = await self.fragment_collector.db.get_all_status()
+
+        if not rows:
+            await self._send("Нет данных о сборе. Ещё ничего не собиралось.")
+            return
+
+        lines = ["<b>📊 Статус сбора:</b>\n"]
+        for r in rows:
+            dt = r['last_collected_at']
+            dt_str = dt.strftime("%d.%m %H:%M") if dt else "—"
+            lines.append(f"<b>{r['source']}</b> — last_id: {r['last_msg_id']}, {dt_str}")
+
+        await self._send("\n".join(lines), parse_mode="HTML")
+
+    async def _cmd_collect_stop(self):
+        """Handle /collect_stop command"""
+        if not self.fragment_collector:
+            await self._send("❌ Fragment collection не настроен")
+            return
+
+        if not self._bulk_task or self._bulk_task.done():
+            await self._send("Нет активного bulk collection")
+            return
+
+        self.fragment_collector._bulk_stop = True
+        await self._send("⏹ Останавливаю bulk collection...")
 
     async def _send(
         self,
@@ -291,6 +400,9 @@ class AssistantBot:
             {"command": "summary", "description": "Сводка непрочитанных сообщений"},
             {"command": "chat", "description": "Сводка конкретного чата"},
             {"command": "chats", "description": "Список отслеживаемых чатов"},
+            {"command": "collect", "description": "Bulk сбор фрагментов"},
+            {"command": "collect_status", "description": "Статус сбора фрагментов"},
+            {"command": "collect_stop", "description": "Остановить сбор"},
             {"command": "reset", "description": "Сбросить состояние"},
             {"command": "help", "description": "Справка по командам"},
         ]
