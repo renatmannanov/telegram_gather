@@ -99,6 +99,8 @@ async def main():
     """Main entry point"""
     logger.info("Starting Telegram Gather...")
 
+    fragments_db = None
+
     # Try to restore session from environment (for Railway/Docker deployment)
     restore_session_from_env()
 
@@ -165,7 +167,6 @@ async def main():
         )
 
         # Start fragment collection (if DATABASE_URL configured)
-        fragments_db = None
         if config.get("database_url"):
             try:
                 fragments_db = FragmentsDB()
