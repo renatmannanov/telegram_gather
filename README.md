@@ -88,6 +88,55 @@ telegram-gather/
     └── transcription_service.py  # Whisper + GPT интеграция
 ```
 
+## Чтение чатов через Claude Code
+
+Скрипт `fetch_chat.py` позволяет Claude Code подключаться к Telegram и выгружать сообщения из любых чатов для анализа.
+
+### Как использовать
+
+```bash
+# Выгрузить сообщения из одного или нескольких чатов
+python fetch_chat.py "Название чата" --period 1w
+python fetch_chat.py "Чат 1" "Чат 2" --period 2w
+
+# Опции
+#   -p, --period    Период: 12h, 1d, 3d, 1w, 2w (по умолчанию: 1w)
+#   -f, --format    Формат: text или json (по умолчанию: text)
+#   -o, --output    Папка для файлов (по умолчанию: data/exports)
+#   -l, --limit     Макс. сообщений на чат (по умолчанию: 200)
+```
+
+Файлы сохраняются в `data/exports/` — потом их можно прочитать через Read tool.
+
+### Поиск чатов по ключевому слову
+
+Если не знаешь точное название чата, можно найти все чаты по ключевым словам. Пример одноразового скрипта:
+
+```python
+import asyncio, sys, io
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+from telethon import TelegramClient
+from config import config
+
+async def main():
+    client = TelegramClient(config["session_name"], config["api_id"], config["api_hash"])
+    await client.connect()
+    async for d in client.iter_dialogs():
+        if any(kw in (d.title or "").lower() for kw in ["ключевое", "слово"]):
+            print(f"  ID: {d.id}  |  {d.title}  |  {type(d.entity).__name__}")
+    await client.disconnect()
+
+asyncio.run(main())
+```
+
+### Важно
+
+- Скрипт использует существующую Telethon-сессию (`telegram_gather.session`). Если сессия не авторизована — сначала запусти `python main.py`.
+- Скрипт **не изменяет** `assistant_state.json` и не влияет на работу бота.
+- Название чата должно совпадать с тем, что видно в Telegram (регистр не важен).
+- Папка `data/` в `.gitignore` — экспорты не попадут в git.
+
 ## Лицензия
 
 MIT
