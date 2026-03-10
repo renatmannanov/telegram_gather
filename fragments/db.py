@@ -5,6 +5,7 @@ Uses asyncpg with connection pool for async INSERT into ayda_think's PostgreSQL.
 import asyncpg
 import json
 import logging
+from datetime import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,9 @@ class FragmentsDB:
         tags: list[str] -> PostgreSQL TEXT[]
         metadata: dict -> PostgreSQL JSONB (json.dumps applied here)
         """
+        # Ensure created_at is timezone-naive UTC for PostgreSQL TIMESTAMP column
+        if created_at.tzinfo is not None:
+            created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
         async with self.pool.acquire() as conn:
             result = await conn.execute("""
                 INSERT INTO fragments (external_id, source, text, created_at,
