@@ -445,30 +445,30 @@ Railway Project
 - [ ] Обновить TELEGRAM_SESSION_BASE64 на Railway
 - [ ] Проверить: сервис стартует без ошибок авторизации
 
-### Этап 1 — Подключение к PostgreSQL
-- [ ] Добавить asyncpg в requirements.txt
-- [ ] fragments/db.py: FragmentsDB с connection pool
-- [ ] Создание gather_state при подключении
+### Этап 1 — Подключение к PostgreSQL ✅ DONE
+- [x] Добавить asyncpg в requirements.txt
+- [x] fragments/db.py: FragmentsDB с connection pool
+- [x] Создание gather_state при подключении
 - [ ] Тест: подключиться к PostgreSQL ayda_think, INSERT одного фрагмента
 - [ ] Настроить DATABASE_URL на Railway (internal URL)
 
-### Этап 2 — Collector + реалтайм для saved
-- [ ] fragments/collector.py: FragmentCollector
-- [ ] Event handler на новые сообщения в 'me' (реалтайм)
-- [ ] Определение content_type (note / link / repost)
-- [ ] Извлечение тегов (#hashtags)
-- [ ] Статистика: inserted vs skipped (для логов)
+### Этап 2 — Collector + реалтайм для saved ✅ DONE
+- [x] fragments/collector.py: FragmentCollector
+- [x] Event handler на новые сообщения в 'me' (реалтайм)
+- [x] Определение content_type (note / link / repost)
+- [x] Извлечение тегов (#hashtags)
+- [x] Статистика: inserted vs skipped (для логов)
 - [ ] Тест: сохранить сообщение в saved → проверить что попало в БД
 
-### Этап 3 — Polling для каналов
-- [ ] Конфиг: GATHER_SOURCES из env-переменной
-- [ ] Polling loop для каналов (раз в час)
-- [ ] gather_state: сохранение/чтение last_id
+### Этап 3 — Polling для каналов ✅ DONE
+- [x] Конфиг: GATHER_SOURCES из env-переменной (parse_sources в config.py)
+- [x] Polling loop для каналов (раз в час)
+- [x] gather_state: сохранение/чтение last_id
 - [ ] Тест: добавить канал, дождаться polling, проверить данные
 
-### Этап 4 — Первичный сбор (bulk)
-- [ ] scripts/bulk_collect.py (или расширение fetch_chat.py)
-- [ ] Пачками с логированием прогресса
+### Этап 4 — Первичный сбор (bulk) ✅ DONE
+- [x] scripts/bulk_collect.py
+- [x] Пачками с логированием прогресса
 - [ ] Запустить: собрать всю историю saved + канал
 - [ ] Проверить: сколько фрагментов, нет ли дублей
 
@@ -499,6 +499,27 @@ INSERT 4000 записей в PostgreSQL — секунды. Узкое мест
 - services/ — без изменений
 - config.py — +1 переменная (DATABASE_URL)
 - main.py — +15 строк (import + db init + event handler + polling loop)
+
+---
+
+## TODO для tg_gather (доработки к текущему плану)
+
+### 1. ~~Graceful shutdown (main.py)~~ — НЕ НУЖНО
+Уже реализовано: `finally` блок в main.py вызывает `fragments_db.close()`. Telethon сам перехватывает SIGTERM через `run_until_disconnected()`. Отдельный signal handler — дублирование.
+
+### 2. ~~Обработка всех видов контента~~ — НЕ НУЖНО
+В Telethon `msg.text` и `msg.message` — это один и тот же атрибут (алиас). Менять нечего. Голосовые транскрипции и PDF — отдельная фича на будущее, не в скоупе.
+
+### 3. Ссылки без описания — ✅ СДЕЛАНО
+Фильтр теперь пропускает короткие сообщения, если в них есть URL:
+```python
+if len(text.strip()) < 10 and not URL_PATTERN.search(text):
+    continue
+```
+Исправлено в collector.py, main.py (event handler) и bulk_collect.py.
+
+### 4. ~~Ретраи при ошибках БД~~ — НЕ НУЖНО
+`asyncpg.create_pool()` сам переподключается при потере соединения. Следующий `pool.acquire()` получит новое соединение. Ретраи с backoff — overengineering для текущего масштаба.
 
 ---
 
