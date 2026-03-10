@@ -28,7 +28,9 @@ class FragmentCollector:
             async for msg in self.client.iter_messages(
                 source, min_id=last_id, reverse=True
             ):
-                if not msg.text or len(msg.text.strip()) < 10:
+                if not msg.text:
+                    continue
+                if len(msg.text.strip()) < 10 and not URL_PATTERN.search(msg.text):
                     continue
 
                 inserted = await self.db.insert_fragment(
@@ -55,6 +57,9 @@ class FragmentCollector:
                 await self.db.save_last_id(source_key, max_id)
 
         return stats
+
+    def _has_url(self, text: str) -> bool:
+        return bool(URL_PATTERN.search(text))
 
     def _extract_tags(self, text: str) -> list:
         return [w for w in text.split() if w.startswith('#')]

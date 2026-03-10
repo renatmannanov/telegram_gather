@@ -38,7 +38,9 @@ async def bulk_collect(client, db, sources, batch_size=100):
         logger.info(f"[{source_key}] Starting bulk collection...")
 
         async for msg in client.iter_messages(source, reverse=True):
-            if not msg.text or len(msg.text.strip()) < 10:
+            if not msg.text:
+                continue
+            if len(msg.text.strip()) < 10 and not collector._has_url(msg.text):
                 continue
 
             result = await db.insert_fragment(

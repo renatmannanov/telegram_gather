@@ -176,7 +176,9 @@ async def main():
                 @client.on(events.NewMessage(chats='me'))
                 async def on_saved_message(event):
                     msg = event.message
-                    if not msg.text or len(msg.text.strip()) < 10:
+                    if not msg.text:
+                        return
+                    if len(msg.text.strip()) < 10 and not collector._has_url(msg.text):
                         return
                     result = await collector.db.insert_fragment(
                         external_id=f"telegram_me_{msg.id}",
