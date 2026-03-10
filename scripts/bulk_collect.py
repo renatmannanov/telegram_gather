@@ -35,9 +35,10 @@ async def bulk_collect(client, db, sources, batch_size=100):
         count = 0
         inserted = 0
 
-        logger.info(f"[{source_key}] Starting bulk collection...")
+        last_id = await db.get_last_id(source_key)
+        logger.info(f"[{source_key}] Starting bulk collection (min_id={last_id})...")
 
-        async for msg in client.iter_messages(source, reverse=True):
+        async for msg in client.iter_messages(source, min_id=last_id, reverse=True):
             if not msg.text:
                 continue
             if len(msg.text.strip()) < 10 and not collector._has_url(msg.text):
