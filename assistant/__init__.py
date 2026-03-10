@@ -33,7 +33,8 @@ async def start_assistant(
     client: TelegramClient,
     bot_token: str,
     chat_id: str,
-    config_path: str = "assistant_config.yaml"
+    config_path: str = "assistant_config.yaml",
+    fragment_collector=None
 ) -> Optional[AssistantBot]:
     """
     Start the Personal Assistant.
@@ -43,6 +44,7 @@ async def start_assistant(
         bot_token: Telegram Bot API token (same as health_monitor)
         chat_id: Chat ID to send summaries to (same as health_monitor)
         config_path: Path to assistant_config.yaml
+        fragment_collector: FragmentCollector instance for /collect commands
 
     Returns:
         AssistantBot instance if started successfully, None otherwise
@@ -52,38 +54,41 @@ async def start_assistant(
         logger.info("Assistant disabled: HEALTH_BOT_TOKEN or HEALTH_ALERT_CHAT_ID not set")
         return None
 
-    if not os.path.exists(config_path):
-        logger.info(f"Assistant disabled: {config_path} not found")
-        return None
+    # Load assistant config (optional — bot works without it for /collect commands)
+    config = None
+    msg_collector = None
+    summarizer = None
+    storage = None
 
-    # Load configuration
-    try:
-        config = AssistantConfig.load(config_path)
-        logger.info(f"Assistant config loaded: {len(config.chats)} chats configured")
-    except Exception as e:
-        logger.error(f"Failed to load assistant config: {e}")
-        return None
+    if os.path.exists(config_path):
+        try:
+            config = AssistantConfig.load(config_path)
+            logger.info(f"Assistant config loaded: {len(config.chats)} chats configured")
+            msg_collector = MessageCollector(client, config)
+            summarizer = Summarizer(config)
+            storage = SummaryStorage(config.data_dir)
+        except Exception as e:
+            logger.error(f"Failed to load assistant config: {e}")
+    else:
+        logger.info(f"Assistant config not found ({config_path}), summary commands disabled")
 
-    if not config.chats:
-        logger.warning("Assistant disabled: no chats configured in assistant_config.yaml")
+    # Need at least one feature to start the bot
+    if not msg_collector and not fragment_collector:
+        logger.info("Assistant disabled: no config and no fragment collector")
         return None
-
-    # Initialize components
-    collector = MessageCollector(client, config)
-    summarizer = Summarizer(config)
-    storage = SummaryStorage(config.data_dir)
 
     # Create and start bot
     bot = AssistantBot(
         bot_token=bot_token,
         chat_id=chat_id,
-        collector=collector,
+        collector=msg_collector,
         summarizer=summarizer,
-        storage=storage
+        storage=storage,
+        fragment_collector=fragment_collector
     )
 
     # Start polling in background
     asyncio.create_task(bot.start())
-    logger.info("Personal Assistant started - send /help to the bot for commands")
+    logger.info("Assistant bot started - send /help for commands")
 
     return bot

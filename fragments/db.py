@@ -69,6 +69,14 @@ class FragmentsDB:
                     last_collected_at = NOW()
             """, source, msg_id)
 
+    async def get_all_status(self) -> list:
+        """Get collection status for all sources."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT source, last_msg_id, last_collected_at FROM gather_state ORDER BY source"
+            )
+            return [dict(r) for r in rows]
+
     async def close(self):
         if self.pool:
             await self.pool.close()

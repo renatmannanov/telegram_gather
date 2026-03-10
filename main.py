@@ -165,68 +165,71 @@ async def main():
         # Register handlers
         register_voice_handler(client)
 
-        # Start personal assistant (if configured)
-        assistant_bot = await start_assistant(
-            client,
-            bot_token=config.get("health_bot_token"),
-            chat_id=config.get("health_alert_chat_id")
-        )
-
         # Start fragment collection (if DATABASE_URL configured)
+        fragment_collector = None
         if config.get("database_url"):
             try:
                 fragments_db = FragmentsDB()
                 await fragments_db.connect(config["database_url"])
-                collector = FragmentCollector(client, fragments_db)
+                fragment_collector = FragmentCollector(client, fragments_db)
 
-                # Realtime: event handler for saved messages
-                @client.on(events.NewMessage(chats='me'))
-                async def on_saved_message(event):
+                # Realtime: event handler for all GATHER_SOURCES
+                my_id = me.id
+                all_sources = parse_sources(config["gather_sources_raw"])
+
+                # Build chats list for event filter
+                event_chats = []
+                for s in all_sources:
+                    if s == 'me':
+                        event_chats.append('me')
+                    else:
+                        event_chats.append(int(s) if str(s).lstrip('-').isdigit() else s)
+
+                @client.on(events.NewMessage(chats=event_chats))
+                async def on_new_fragment(event):
                     msg = event.message
                     if not msg.text:
                         return
-                    if len(msg.text.strip()) < 10 and not collector._has_url(msg.text):
+                    if len(msg.text.strip()) < 10 and not fragment_collector._has_url(msg.text):
                         return
-                    result = await collector.db.insert_fragment(
-                        external_id=f"telegram_me_{msg.id}",
+
+                    # Determine source key
+                    chat_id = event.chat_id
+                    if chat_id == my_id:
+                        source_key = 'me'
+                    else:
+                        source_key = str(chat_id)
+
+                    result = await fragment_collector.db.insert_fragment(
+                        external_id=f"telegram_{source_key}_{msg.id}",
                         source='telegram',
                         text_content=msg.text,
                         created_at=msg.date,
-                        tags=collector._extract_tags(msg.text),
-                        content_type=collector._detect_type(msg),
+                        tags=fragment_collector._extract_tags(msg.text),
+                        content_type=fragment_collector._detect_type(msg),
                         metadata={
                             'telegram_msg_id': msg.id,
-                            'chat': 'me',
+                            'chat': source_key,
                             'is_forward': msg.forward is not None
                         }
                     )
                     if result:
-                        await collector.db.save_last_id('me', msg.id)
-                        logger.info(f"Fragment saved (realtime): me_{msg.id}")
+                        await fragment_collector.db.save_last_id(source_key, msg.id)
+                        logger.info(f"Fragment saved (realtime): {source_key}_{msg.id}")
 
-                # Polling: channels (excluding 'me' — handled by event above)
-                all_sources = parse_sources(config["gather_sources_raw"])
-                channel_sources = [s for s in all_sources if s != 'me']
-
-                if channel_sources:
-                    async def channel_polling_loop():
-                        while True:
-                            try:
-                                stats = await collector.collect_new(channel_sources)
-                                if stats['inserted']:
-                                    logger.info(f"Channel polling: {stats}")
-                            except Exception as e:
-                                logger.error(f"Channel polling error: {e}")
-                            await asyncio.sleep(3600)
-
-                    asyncio.create_task(channel_polling_loop())
-                    logger.info(f"Fragment polling started for {len(channel_sources)} channel(s)")
-
-                logger.info("Fragment collection enabled")
+                logger.info(f"Fragment collection enabled (realtime for {len(event_chats)} source(s))")
             except Exception as e:
                 logger.error(f"Failed to start fragment collection: {e}")
         else:
             logger.info("Fragment collection disabled (DATABASE_URL not set)")
+
+        # Start personal assistant bot (with fragment collector if available)
+        assistant_bot = await start_assistant(
+            client,
+            bot_token=config.get("health_bot_token"),
+            chat_id=config.get("health_alert_chat_id"),
+            fragment_collector=fragment_collector
+        )
 
         logger.info("Telegram Gather is running. Press Ctrl+C to stop.")
 
