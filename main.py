@@ -77,7 +77,11 @@ def restore_session_from_env():
     session_data = os.getenv("TELEGRAM_SESSION_BASE64")
     if session_data:
         session_file = f"{config['session_name']}.session"
-        if not os.path.exists(session_file):
+        logger.info(f"Session env var found ({len(session_data)} chars), target file: {session_file}")
+        if os.path.exists(session_file):
+            # Always overwrite — env var is the source of truth in deployed environments
+            logger.info(f"Session file exists, overwriting with env var data")
+        if True:
             logger.info("Restoring session from environment variable...")
             try:
                 decoded = base64.b64decode(session_data)
@@ -93,6 +97,8 @@ def restore_session_from_env():
                 logger.info("Session restored successfully")
             except Exception as e:
                 logger.error(f"Failed to restore session: {e}")
+    else:
+        logger.info("TELEGRAM_SESSION_BASE64 not set, using local session file")
 
 
 async def main():
