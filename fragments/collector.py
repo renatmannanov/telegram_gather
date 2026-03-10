@@ -69,10 +69,10 @@ class FragmentCollector:
         # 'me' shortcut
         if name.lower() == 'me':
             return 'me', 'me'
-        # Search dialogs by title
+        # Search dialogs by title (use dialog.id for -100 channel format)
         async for dialog in self.client.iter_dialogs():
             if dialog.title and dialog.title.lower() == name.lower():
-                return dialog.entity, str(dialog.entity.id if hasattr(dialog.entity, 'id') else dialog.id)
+                return dialog.entity, str(dialog.id)
         raise ValueError(f"Chat '{name}' not found")
 
     async def bulk_collect(self, source, source_key=None, progress_callback=None, batch_size=100) -> dict:
