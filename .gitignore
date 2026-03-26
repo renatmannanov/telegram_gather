@@ -29,4 +29,4 @@ Thumbs.db
 # Personal data & config
 data/
 assistant_config.yaml
-backlog.md
+task_tracker/backlog/backlog.md
