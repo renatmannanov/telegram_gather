@@ -56,6 +56,9 @@ config = {
 
     # Fragment collection sources (comma-separated: me,-1001234567890,channel_username)
     "gather_sources_raw": get_optional("GATHER_SOURCES", ""),
+
+    # HTTP API key (optional — API disabled if not set)
+    "api_key": get_optional("TG_GATHER_API_KEY"),
 }
 
 

@@ -106,6 +106,7 @@ async def main():
     logger.info("Starting Telegram Gather...")
 
     fragments_db = None
+    api_runner = None
 
     # Try to restore session from environment (for Railway/Docker deployment)
     restore_session_from_env()
@@ -231,6 +232,10 @@ async def main():
             fragment_collector=fragment_collector
         )
 
+        # Start HTTP API (if TG_GATHER_API_KEY is set)
+        from api import start_api
+        api_runner = await start_api(client, port=int(os.getenv("PORT", "8080")))
+
         logger.info("Telegram Gather is running. Press Ctrl+C to stop.")
 
         # Run until disconnected
@@ -249,6 +254,10 @@ async def main():
         raise
 
     finally:
+        # Cleanup HTTP API
+        if api_runner:
+            await api_runner.cleanup()
+
         # Cleanup fragment DB pool
         if fragments_db:
             await fragments_db.close()
