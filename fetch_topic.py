@@ -51,6 +51,18 @@ def extract_sender(msg):
     }
 
 
+def extract_reactions(msg) -> list:
+    """Extract reactions from message as [{emoji, count}]."""
+    if not msg.reactions:
+        return []
+    result = []
+    for rc in msg.reactions.results:
+        reaction = rc.reaction
+        emoji = getattr(reaction, "emoticon", None) or str(getattr(reaction, "document_id", "?"))
+        result.append({"emoji": str(emoji), "count": rc.count})
+    return result
+
+
 async def fetch_topic_messages(client, entity, topic_id, limit=0):
     """Fetch all messages from a forum topic, return as flat list."""
     messages = []
@@ -60,14 +72,17 @@ async def fetch_topic_messages(client, entity, topic_id, limit=0):
             count += 1
             continue
         sender = extract_sender(msg)
+        text = msg.text or msg.message or ""
         messages.append({
             "id": msg.id,
             "date": msg.date.strftime("%Y-%m-%dT%H:%M:%S") if msg.date else None,
             "user_id": sender["user_id"],
             "sender_name": sender["name"],
             "username": sender["username"],
-            "text": msg.text or msg.message or "",
+            "text": text,
+            "char_count": len(text),
             "reply_to_msg_id": msg.reply_to.reply_to_msg_id if msg.reply_to else None,
+            "reactions": extract_reactions(msg),
         })
         count += 1
         if count % 200 == 0:

@@ -92,41 +92,52 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+CHAT_LINK_PREFIX = "https://t.me/c/2924475859"
+
+
+def make_message_entry(msg: dict) -> dict:
+    """Convert a raw message dict to {text, date, url}."""
+    return {
+        "text": msg["text"],
+        "date": msg.get("date"),
+        "url": f"{CHAT_LINK_PREFIX}/{msg['id']}",
+    }
+
+
 def collect_user_texts_from_topic(topic_data: dict, only_roots=False) -> dict:
-    """Collect texts per user_id from a topic file.
+    """Collect message entries per user_id from a topic file.
 
     If only_roots=False, also includes replies where the author matches the root author.
-    Returns {user_id: [text, text, ...]}
+    Returns {user_id: [{text, date, url}, ...]}
     """
-    user_texts = {}
+    user_entries = {}
     for thread in topic_data.get("threads", []):
         root = thread.get("root")
         if not root:
             continue
         uid = root.get("user_id")
         if uid:
-            user_texts.setdefault(uid, []).append(root["text"])
+            user_entries.setdefault(uid, []).append(make_message_entry(root))
 
         if not only_roots:
-            # Include replies from the same author as root (self-additions)
             for reply in thread.get("replies", []):
                 if reply.get("user_id") == uid:
-                    user_texts.setdefault(uid, []).append(reply["text"])
+                    user_entries.setdefault(uid, []).append(make_message_entry(reply))
 
-    return user_texts
+    return user_entries
 
 
 def collect_root_texts_by_user(topic_data: dict) -> dict:
-    """Collect only root message texts per user_id."""
-    user_texts = {}
+    """Collect only root message entries per user_id."""
+    user_entries = {}
     for thread in topic_data.get("threads", []):
         root = thread.get("root")
         if not root:
             continue
         uid = root.get("user_id")
         if uid:
-            user_texts.setdefault(uid, []).append(root["text"])
-    return user_texts
+            user_entries.setdefault(uid, []).append(make_message_entry(root))
+    return user_entries
 
 
 def parse_args():
@@ -175,11 +186,11 @@ def main():
         uid = p["user_id"]
         name = f"{p['first_name']} {p['last_name']}".strip()
 
-        # Combine intro texts
-        intros = intro_texts.get(uid, [])
-        introduction = "\n\n".join(intros) if intros else ""
+        # Combine intro entries
+        intro_entries = intro_texts.get(uid, [])
+        introduction = "\n\n".join(e["text"] for e in intro_entries) if intro_entries else ""
 
-        # Collect requests/offerings/sales
+        # Collect requests/offerings/sales entries
         user_requests = requests_texts.get(uid, [])
         user_offerings = offerings_texts.get(uid, [])
         user_sales = sales_texts.get(uid, [])
@@ -193,12 +204,12 @@ def main():
             merge_links(links, extract_links(bio))
 
         # 2. Intro links
-        for text in intros:
-            merge_links(links, extract_links(text))
+        for entry in intro_entries:
+            merge_links(links, extract_links(entry["text"]))
 
         # 3. Requests/offerings/sales links (from their own posts)
-        for text in user_requests + user_offerings + user_sales:
-            merge_links(links, extract_links(text))
+        for entry in user_requests + user_offerings + user_sales:
+            merge_links(links, extract_links(entry["text"]))
 
         contact = {
             "user_id": uid,
