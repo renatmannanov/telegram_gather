@@ -15,6 +15,7 @@ import os
 from datetime import datetime, timezone
 
 from aiohttp import web
+from telethon.utils import get_peer_id
 
 from fetch_chat import resolve_chat, fetch_messages, parse_period
 
@@ -78,9 +79,38 @@ async def handle_messages(request):
         if msg.get("date") and "+" not in msg["date"] and "Z" not in msg["date"]:
             msg["date"] = msg["date"] + "+00:00"
 
-    # Get chat title
+    # Get chat title and proper ID (-100 format for channels/groups)
     chat_name = getattr(entity, "title", None) or getattr(entity, "first_name", chat)
-    chat_id = getattr(entity, "id", None)
+    chat_id = get_peer_id(entity)
+
+    # Filter by topic if requested
+    topic_id = request.query.get("topic_id")
+    if topic_id is not None:
+        topic_id = int(topic_id)
+        messages = [m for m in messages if m.get("message_thread_id") == topic_id]
+
+    # Save to fragments DB if available
+    db = request.app.get("fragments_db")
+    if db:
+        for msg_data in messages:
+            text = msg_data.get('text', '')
+            await db.insert_fragment(
+                external_id=f"telegram_{chat_id}_{msg_data['id']}",
+                source='telegram',
+                text_content=text,
+                created_at=datetime.fromisoformat(msg_data['date']),
+                tags=[w for w in text.split() if w.startswith('#')],
+                content_type='repost' if msg_data.get('is_forward') else
+                             'link' if 'http' in text else 'note',
+                metadata={
+                    'telegram_msg_id': msg_data['id'],
+                    'chat': str(chat_id),
+                    'is_forward': msg_data.get('is_forward', False),
+                },
+                sender_id=msg_data.get('sender_id'),
+                channel_id=chat_id,
+                message_thread_id=msg_data.get('message_thread_id'),
+            )
 
     return web.json_response({
         "chat_name": chat_name,
@@ -112,7 +142,7 @@ async def handle_chats(request):
     return web.json_response({"chats": chats})
 
 
-async def start_api(client, port: int = 8080):
+async def start_api(client, port: int = 8080, fragments_db=None):
     """Start aiohttp server in the background.
 
     Must be called inside the same event loop as Telethon client.
@@ -125,6 +155,8 @@ async def start_api(client, port: int = 8080):
 
     app = web.Application(middlewares=[auth_middleware])
     app["telethon_client"] = client
+    if fragments_db:
+        app["fragments_db"] = fragments_db
 
     app.router.add_get("/api/messages", handle_messages)
     app.router.add_get("/api/chats", handle_chats)

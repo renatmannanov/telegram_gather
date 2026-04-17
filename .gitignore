@@ -30,3 +30,5 @@ Thumbs.db
 data/
 assistant_config.yaml
 task_tracker/backlog/backlog.md
+session_base64.txt
+.claude/

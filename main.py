@@ -15,7 +15,7 @@ from handlers import register_voice_handler
 from services.health_monitor import HealthMonitor, is_session_error
 from assistant import start_assistant
 from fragments.db import FragmentsDB
-from fragments.collector import FragmentCollector
+from fragments.collector import FragmentCollector, get_topic_id
 from telethon import events
 
 # Configure logging
@@ -201,6 +201,11 @@ async def main():
                     else:
                         source_key = str(chat_id)
 
+                    # Detect forum topic (get_chat() is cached by Telethon)
+                    chat_entity = await event.get_chat() if source_key != 'me' else None
+                    is_forum = getattr(chat_entity, 'forum', False) if chat_entity else False
+                    thread_id = get_topic_id(msg, chat=chat_entity) if is_forum else None
+
                     result = await fragment_collector.db.insert_fragment(
                         external_id=f"telegram_{source_key}_{msg.id}",
                         source='telegram',
@@ -212,7 +217,10 @@ async def main():
                             'telegram_msg_id': msg.id,
                             'chat': source_key,
                             'is_forward': msg.forward is not None
-                        }
+                        },
+                        sender_id=msg.sender_id,
+                        channel_id=event.chat_id if source_key != 'me' else None,
+                        message_thread_id=thread_id,
                     )
                     if result:
                         await fragment_collector.db.save_last_id(source_key, msg.id)
@@ -234,7 +242,7 @@ async def main():
 
         # Start HTTP API (if TG_GATHER_API_KEY is set)
         from api import start_api
-        api_runner = await start_api(client, port=int(os.getenv("PORT", "8080")))
+        api_runner = await start_api(client, port=int(os.getenv("PORT", "8080")), fragments_db=fragments_db)
 
         logger.info("Telegram Gather is running. Press Ctrl+C to stop.")
 

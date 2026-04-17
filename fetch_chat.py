@@ -102,6 +102,9 @@ def get_sender_name(msg) -> str:
 
 async def fetch_messages(client, entity, since: datetime, limit: int) -> list:
     """Fetch messages from entity since given date, return as list of dicts."""
+    from fragments.collector import get_topic_id
+
+    is_forum = getattr(entity, 'forum', False)
     messages = []
     # reverse=True + offset_date = go forward from `since` date (oldest first)
     async for msg in client.iter_messages(
@@ -113,8 +116,11 @@ async def fetch_messages(client, entity, since: datetime, limit: int) -> list:
             "id": msg.id,
             "date": msg.date.strftime("%Y-%m-%dT%H:%M:%S") if msg.date else None,
             "sender": get_sender_name(msg),
+            "sender_id": msg.sender_id,
             "text": msg.text or msg.message or "",
             "reply_to": msg.reply_to.reply_to_msg_id if msg.reply_to else None,
+            "is_forward": msg.forward is not None,
+            "message_thread_id": get_topic_id(msg, chat=entity) if is_forum else None,
         })
 
     return messages  # already chronological (oldest first) due to reverse=True
