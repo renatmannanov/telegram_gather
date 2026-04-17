@@ -4,9 +4,34 @@ Fragment collector: reads messages from Telegram sources and writes to PostgreSQ
 import logging
 import re
 
+from telethon.tl.types import MessageReplyHeader
+
 logger = logging.getLogger(__name__)
 
 URL_PATTERN = re.compile(r'https?://\S+')
+
+
+def get_topic_id(message, chat=None):
+    """Return topic ID for a message in a forum group.
+
+    - Named topic: service message ID (e.g. 3, 15)
+    - General topic: 1
+    - Regular group / not a forum: None
+
+    chat — chat entity (needed to detect General topic).
+    """
+    reply = message.reply_to
+
+    if isinstance(reply, MessageReplyHeader) and reply.forum_topic:
+        if reply.reply_to_top_id is not None:
+            return reply.reply_to_top_id
+        else:
+            return reply.reply_to_msg_id
+
+    if chat is not None and getattr(chat, 'forum', False):
+        return 1  # General topic
+
+    return None
 
 
 class FragmentCollector:
@@ -26,6 +51,10 @@ class FragmentCollector:
             last_id = await self.db.get_last_id(source_key)
             max_id = last_id
 
+            # Resolve chat entity once per source (needed for forum detection)
+            chat_entity = await self.client.get_entity(source) if source != 'me' else None
+            is_forum = getattr(chat_entity, 'forum', False) if chat_entity else False
+
             async for msg in self.client.iter_messages(
                 source, min_id=last_id, reverse=True
             ):
@@ -33,6 +62,8 @@ class FragmentCollector:
                     continue
                 if len(msg.text.strip()) < 10 and not URL_PATTERN.search(msg.text):
                     continue
+
+                thread_id = get_topic_id(msg, chat=chat_entity) if is_forum else None
 
                 inserted = await self.db.insert_fragment(
                     external_id=f"telegram_{source_key}_{msg.id}",
@@ -45,7 +76,10 @@ class FragmentCollector:
                         'telegram_msg_id': msg.id,
                         'chat': source_key,
                         'is_forward': msg.forward is not None
-                    }
+                    },
+                    sender_id=msg.sender_id,
+                    channel_id=int(source_key) if source_key != 'me' else None,
+                    message_thread_id=thread_id,
                 )
                 if inserted:
                     stats['inserted'] += 1
@@ -85,6 +119,10 @@ class FragmentCollector:
         stats = {'count': 0, 'inserted': 0}
         last_id = await self.db.get_last_id(source_key)
 
+        # Resolve chat entity once (needed for forum detection)
+        chat_entity = await self.client.get_entity(source) if source != 'me' else None
+        is_forum = getattr(chat_entity, 'forum', False) if chat_entity else False
+
         logger.info(f"[{source_key}] Bulk collection started (min_id={last_id})")
 
         async for msg in self.client.iter_messages(source, min_id=last_id, reverse=True):
@@ -97,6 +135,8 @@ class FragmentCollector:
             if len(msg.text.strip()) < 10 and not self._has_url(msg.text):
                 continue
 
+            thread_id = get_topic_id(msg, chat=chat_entity) if is_forum else None
+
             result = await self.db.insert_fragment(
                 external_id=f"telegram_{source_key}_{msg.id}",
                 source='telegram',
@@ -108,7 +148,10 @@ class FragmentCollector:
                     'telegram_msg_id': msg.id,
                     'chat': source_key,
                     'is_forward': msg.forward is not None
-                }
+                },
+                sender_id=msg.sender_id,
+                channel_id=int(source_key) if source_key != 'me' else None,
+                message_thread_id=thread_id,
             )
             stats['count'] += 1
             if result:

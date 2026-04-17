@@ -1,6 +1,6 @@
 # API Save + новые поля (sender_id, channel_id, message_thread_id)
 
-> Статус: pending
+> Статус: done
 > Дата: 2026-04-16 (обновлён)
 > Тип: фича
 
@@ -21,12 +21,12 @@
 
 | # | Файл | Статус |
 |---|------|--------|
-| 0 | step_0_ayda_think_migration.md | [ ] |
-| 1 | step_1_db_insert.md | [ ] |
-| 2 | step_2_api_save.md | [ ] |
-| 3 | step_3_realtime_save.md | [ ] |
-| 4 | step_4_thread_id.md | [ ] |
-| 5 | step_5_completion.md | [ ] |
+| 0 | step_0_ayda_think_migration.md | [x] |
+| 1 | step_1_db_insert.md | [x] |
+| 2 | step_2_api_save.md | [x] |
+| 3 | step_3_realtime_save.md | [x] |
+| 4 | step_4_thread_id.md | [x] |
+| 5 | step_5_completion.md | [x] |
 
 ## Порядок выполнения
 

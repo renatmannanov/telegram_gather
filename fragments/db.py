@@ -32,7 +32,9 @@ class FragmentsDB:
         logger.info("FragmentsDB connected, gather_state ready")
 
     async def insert_fragment(self, external_id, source, text_content,
-                              created_at, tags, content_type, metadata) -> bool:
+                              created_at, tags, content_type, metadata,
+                              sender_id=None, channel_id=None,
+                              message_thread_id=None) -> bool:
         """INSERT a fragment. Returns True if inserted, False if duplicate.
 
         tags: list[str] -> PostgreSQL TEXT[]
@@ -44,11 +46,13 @@ class FragmentsDB:
         async with self.pool.acquire() as conn:
             result = await conn.execute("""
                 INSERT INTO fragments (external_id, source, text, created_at,
-                                       tags, content_type, metadata)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                                       tags, content_type, metadata,
+                                       sender_id, channel_id, message_thread_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
                 ON CONFLICT (external_id) DO NOTHING
             """, external_id, source, text_content, created_at,
-                tags, content_type, json.dumps(metadata))
+                tags, content_type, json.dumps(metadata),
+                sender_id, channel_id, message_thread_id)
             return result == 'INSERT 0 1'
 
     async def get_last_id(self, source: str) -> int:
